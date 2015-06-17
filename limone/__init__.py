@@ -2,6 +2,10 @@ import colander
 import sys
 import venusian
 
+try:
+    xrange = xrange
+except NameError: # pragma: no cover
+    xrange = range
 
 class Registry(object):
     """
@@ -106,7 +110,7 @@ class _MappingNode(object):
             props[name] = prop = property_factory(content, node)
             try:
                 prop.__set__(self, data.pop(name, colander.null))
-            except colander.Invalid, e:
+            except colander.Invalid as e:
                 if error is None:
                     error = colander.Invalid(schema)
                 error.add(e, i)
@@ -164,7 +168,7 @@ class _SequenceNode(object):
         for i, item in enumerate(appstruct):
             try:
                 data.append(content._SequenceItem(content, prop, item))
-            except colander.Invalid, e:
+            except colander.Invalid as e:
                 if error is None:
                     error = colander.Invalid(schema)
                 error.add(e, i)
@@ -175,11 +179,33 @@ class _SequenceNode(object):
         self._data = data
 
     def __getitem__(self, index):
-        return self._data[index].get()
+        if isinstance(index, slice):
+            return [item.get() for item in self._data[index]]
+        else:
+            return self._data[index].get()
 
     def __setitem__(self, index, value):
-        content = self.__content__
-        self._data[index] = content._SequenceItem(content, self._prop, value)
+        if isinstance(index, slice):
+            error = None
+            items = []
+            prop = self._prop
+            content = self.__content__
+            for i, item in enumerate(value):
+                try:
+                    items.append(
+                        content._SequenceItem(content, prop, item))
+                except colander.Invalid as e:
+                    if error is None:
+                        error = colander.Invalid(self.__schema__)
+                    error.add(e, index.start + i)
+
+            if error is not None:
+                raise error
+
+            self._data[index] = items
+        else:
+            content = self.__content__
+            self._data[index] = content._SequenceItem(content, self._prop, value)
 
     def __delitem__(self, index):
         del self._data[index]
@@ -188,8 +214,18 @@ class _SequenceNode(object):
         for item in self._data:
             yield item.get()
 
-    def __cmp__(self, right):
-        return cmp(list(self), right)
+    def __lt__(self, other):
+        return list(self) < other
+    def __le__(self, other):
+        return list(self) <= other
+    def __eq__(self, other):
+        return list(self) == other
+    def __ne__(self, other):
+        return list(self) != other
+    def __gt__(self, other):
+        return list(self) > other
+    def __ge__(self, other):
+        return list(self) >= other
 
     def __repr__(self):
         return repr(list(self))
@@ -240,31 +276,6 @@ class _SequenceNode(object):
     def reverse(self):
         self._data.reverse()
 
-    def __getslice__(self, i, j):
-        return [item.get() for item in self._data[i:j]]
-
-    def __setslice__(self, i, j, s):
-        error = None
-        items = []
-        prop = self._prop
-        content = self.__content__
-        for index, item in enumerate(s):
-            try:
-                items.append(
-                    content._SequenceItem(content, prop, item))
-            except colander.Invalid, e:
-                if error is None:
-                    error = colander.Invalid(self.__schema__)
-                error.add(e, i + index)
-
-        if error is not None:
-            raise error
-
-        self._data[i:j] = items
-
-    def __delslice__(self, i, j):
-        del self._data[i:j]
-
     def appstruct(self):
         return [_appstruct_node(item) for item in self]
 
@@ -296,7 +307,7 @@ class _TupleNodeProperty(_LeafNodeProperty):
             try:
                 items.append(
                     content._SequenceItem(content, prop, item))
-            except colander.Invalid, e:
+            except colander.Invalid as e:
                 if error is None:
                     error = colander.Invalid(node)
                 error.add(e, i)
@@ -395,8 +406,8 @@ def make_content_type(schema, name, module=None, bases=(object,), meta=type,
             cls.__module__ = module
             cls.__content_type__ = cls
 
-    class ContentType(object):
-        __metaclass__ = MetaType
+    # following metaclass syntax is to support both py2 and py3
+    class ContentType(MetaType("ContentTypeBaseClass", (object,), {})):
         __schema__ = schema
         _property_factory = property_factory
         _MappingNode = _MappingNode
@@ -436,7 +447,7 @@ def make_content_type(schema, name, module=None, bases=(object,), meta=type,
                 node = schema[name]
                 try:
                     appstruct[name] = node.deserialize(value)
-                except colander.Invalid, e:
+                except colander.Invalid as e:
                     if error is None:
                         error = colander.Invalid(schema)
                     error.add(e, i)
@@ -463,7 +474,7 @@ def make_content_type(schema, name, module=None, bases=(object,), meta=type,
                     if value is colander.null and skip_missing:
                         continue
                     setattr(self, name, value)
-                except colander.Invalid, e:
+                except colander.Invalid as e:
                     if error is None:
                         error = colander.Invalid(schema)
                     error.add(e, i)
@@ -506,7 +517,24 @@ class _FinderLoader(object):
         sys.modules[module] = self
         return self
 
-    def __getattr__(self, name):
+    def __getattr__(self, name, *args, **kwargs):
+        # importlib will try to find attributes we don't have and
+        #  we need to explicitly tell it by raising AttributeError.
+        #  It's doing it to try to duck-type this class to see if
+        #  it implements certain interfaces used by import.
+
+        # Attributes tested:
+        #  importlib.util.spec_from_loader: get_filename, is_package
+        #  importlib._find_spec: find_spec
+        #  importlib._SpecMethods._load_unlocked: exec_module
+        #  importlib._handle_fromlist: __path__
+        #  importlib._module_repr: __loader__, __spec__
+        #  importlib._SpecMethods.init_module_attrs: __name__, __loader__,
+        #                                __package__, __spec__, __path__
+        if name in ('__path__', 'exec_module', 'find_spec',
+                    'get_filename', 'is_package', '__loader__',
+                    '__package__', '__spec__', '__name__'):
+            raise AttributeError()
         return self.limone.get_content_type(name)
 
     def unload(self):

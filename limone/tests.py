@@ -1,7 +1,19 @@
-import unittest2
+import sys
+
+PY3 = sys.version_info[0] == 3
+
+if PY3: # pragma: no cover
+    text_type = str
+else: # pragma: no cover
+    text_type = unicode
+
+if sys.version_info[:2] < (2, 7):
+    import unittest2 as unittest
+else:
+    import unittest
 
 
-class MakeContentTypeTests(unittest2.TestCase):
+class MakeContentTypeTests(unittest.TestCase):
 
     def test_schema_is_wrong_type(self):
         import limone
@@ -31,7 +43,7 @@ class MakeContentTypeTests(unittest2.TestCase):
             "constructors.")
 
 
-class ShallowSchemaTests(unittest2.TestCase):
+class ShallowSchemaTests(unittest.TestCase):
 
     def setUp(self):
         import colander
@@ -69,7 +81,8 @@ class ShallowSchemaTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             joe = self.content_type(age='thirty five')
         self.assertEqual(ecm.exception.asdict(), {
-            'age': u'"thirty five" is not a number', 'name': u'Required'})
+            'age': text_type('"thirty five" is not a number'),
+            'name': text_type('Required')})
 
     def test_getset(self):
         joe = self.content_type(name='Joe', age=35)
@@ -84,7 +97,7 @@ class ShallowSchemaTests(unittest2.TestCase):
             joe = self.content_type()
 
         self.assertEqual(ecm.exception.asdict(), {
-            'age': u'Required', 'name': u'Required'})
+            'age': text_type('Required'), 'name': text_type('Required')})
 
     def test_missing_fields_w_defaults(self):
         self.schema = schema = self.schema()
@@ -97,8 +110,7 @@ class ShallowSchemaTests(unittest2.TestCase):
     def test_validation_on_assignment(self):
         import colander
         joe = self.content_type(name='Joe', age=35)
-        with self.assertRaises(colander.Invalid):
-            joe.name = 1234
+        joe.name = 1234  # raises no error as value is coerced into a str
         with self.assertRaises(colander.Invalid):
             joe.age = 'thirty five'
 
@@ -108,7 +120,9 @@ class ShallowSchemaTests(unittest2.TestCase):
 
     def test_serialize(self):
         joe = self.content_type(name='Joe', age=35)
-        self.assertEqual(joe.serialize(), {'age': '35', 'name': 'Joe'})
+        self.assertEqual(joe.serialize(), {
+            'age': '35',
+            'name': 'Joe'.encode("UTF-8")})
 
     def test_appstruct(self):
         joe = self.content_type(name='Joe', age=35)
@@ -146,10 +160,10 @@ class ShallowSchemaTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             joe.deserialize_update({'age': 'forty'})
         self.assertEqual(ecm.exception.asdict(), {
-            'age': u'"forty" is not a number'})
+            'age': text_type('"forty" is not a number')})
 
 
-class RegistryTests(unittest2.TestCase):
+class RegistryTests(unittest.TestCase):
 
     def setUp(self):
         import colander
@@ -221,7 +235,7 @@ class RegistryTests(unittest2.TestCase):
         self.assertEqual(ct.__schema__.children[0].name, 'name')
 
 
-class NestedMappingNodeTests(unittest2.TestCase):
+class NestedMappingNodeTests(unittest.TestCase):
 
     def setUp(self):
         import colander
@@ -268,9 +282,9 @@ class NestedMappingNodeTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             jack = self.content_type(name='Jack', age=500)
         self.assertEqual(ecm.exception.asdict(), {
-            'personal.n_arrests': u'Required',
-            'personal.nsa_data.date_of_contact': u'Required',
-            'personal.nsa_data.serialnum': u'Required'})
+            'personal.n_arrests': text_type('Required'),
+            'personal.nsa_data.date_of_contact': text_type('Required'),
+            'personal.nsa_data.serialnum': text_type('Required')})
 
     def test_assignment(self):
         import datetime
@@ -314,8 +328,8 @@ class NestedMappingNodeTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             jack.personal.nsa_data = {'date_of_contact': 'Christmas'}
         self.assertEqual(ecm.exception.asdict(), {
-            'nsa_data.date_of_contact': u'"Christmas" is not a date object',
-            'nsa_data.serialnum': u'Required'})
+            'nsa_data.date_of_contact': text_type('"Christmas" is not a date object'),
+            'nsa_data.serialnum': text_type('Required')})
 
     def test_non_schema_attributes(self):
         jack = self.test_construction()
@@ -327,11 +341,11 @@ class NestedMappingNodeTests(unittest2.TestCase):
     def test_serialize(self):
         jack = self.test_construction()
         self.assertEquals(jack.serialize(), {
-            'name': 'Jack',
+            'name': 'Jack'.encode("UTF-8"),
             'age': '500',
             'personal': {
                 'nsa_data': {
-                    'serialnum': 'abc123',
+                    'serialnum': 'abc123'.encode("UTF-8"),
                     'date_of_contact': '2010-05-12',
                 },
                 'n_arrests': '5',
@@ -394,7 +408,7 @@ class NestedMappingNodeTests(unittest2.TestCase):
         self.assertEqual(jonas.personal.n_arrests, 6)
 
 
-class NestedSequenceNodeTests(unittest2.TestCase):
+class NestedSequenceNodeTests(unittest.TestCase):
 
     def setUp(self):
         import colander
@@ -476,14 +490,15 @@ class NestedSequenceNodeTests(unittest2.TestCase):
             plane.coords[1] = ['one', 2, 'three']
         self.assertEqual(
             ecm.exception.asdict(), {
-            'x.0': u'"one" is not a number', 'x.2': u'"three" is not a number'}
+            'x.0': text_type('"one" is not a number'),
+            'x.2': text_type('"three" is not a number')}
         )
 
     def test_serialize(self):
         plane = self.test_construction()
         self.assertEqual(plane.serialize(), {
             'coords': [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9']],
-            'id': 'plane'
+            'id': 'plane'.encode("UTF-8")
         })
 
     def test_appstruct(self):
@@ -561,9 +576,9 @@ class NestedSequenceNodeTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             plane.coords[0][1:3] = ['six', 'seven', 'eight']
         self.assertEqual(ecm.exception.asdict(), {
-            'x.1': u'"six" is not a number',
-            'x.2': u'"seven" is not a number',
-            'x.3': u'"eight" is not a number'})
+            'x.1': text_type('"six" is not a number'),
+            'x.2': text_type('"seven" is not a number'),
+            'x.3': text_type('"eight" is not a number')})
 
     def test_delslice(self):
         plane = self.test_construction()
@@ -575,7 +590,7 @@ class NestedSequenceNodeTests(unittest2.TestCase):
         self.assertTrue(2 in plane.coords[0])
 
 
-class TupleNodeTests(unittest2.TestCase):
+class TupleNodeTests(unittest.TestCase):
 
     def setUp(self):
         import colander
@@ -604,7 +619,7 @@ class TupleNodeTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             self.content_type(stream=(1, 'abc'))
         self.assertEqual(ecm.exception.asdict(), {
-            'stream.0': u'"1" is not iterable'})
+            'stream.0': text_type('"1" is not iterable')})
 
     def test_validation(self):
         import colander
@@ -612,19 +627,19 @@ class TupleNodeTests(unittest2.TestCase):
         with self.assertRaises(colander.Invalid) as ecm:
             thing.stream = (['one', 'two'], 'abc')
         self.assertEqual(ecm.exception.asdict(), {
-            'stream.0.0': u'"one" is not a number',
-            'stream.0.1': u'"two" is not a number'})
+            'stream.0.0': text_type('"one" is not a number'),
+            'stream.0.1': text_type('"two" is not a number')})
         with self.assertRaises(colander.Invalid) as ecm:
             thing.stream = ('foo', 'abc')
         self.assertEqual(ecm.exception.asdict(), {
-            'stream.0': u'"foo" is not iterable'})
+            'stream.0': text_type('"foo" is not iterable')})
         with self.assertRaises(colander.Invalid) as ecm:
             thing.stream = 1
         self.assertEqual(ecm.exception.asdict(), {
-            'stream': u'"1" is not iterable'})
+            'stream': text_type('"1" is not iterable')})
 
 
-class ColanderExampleTests(unittest2.TestCase):
+class ColanderExampleTests(unittest.TestCase):
 
     def setUp(self):
         import colander
@@ -672,16 +687,16 @@ class ColanderExampleTests(unittest2.TestCase):
     def test_serialize(self):
         self.assertEqual(self.make_one().serialize(), {
             'age': '52',
-            'friends': [('1', u'Fred'), ('2', u'Barney')],
-            'name': u'Jack',
-            'phones': [{'location': u'home', 'number': u'555-1212'}]})
+            'friends': [('1', text_type('Fred')), ('2', text_type('Barney'))],
+            'name': text_type('Jack'),
+            'phones': [{'location': text_type('home'), 'number': text_type('555-1212')}]})
 
     def test_appstruct(self):
         self.assertEqual(self.make_one().appstruct(), {
             'age': 52,
-            'friends': [(1, u'Fred'), (2, u'Barney')],
-            'name': u'Jack',
-            'phones': [{'location': u'home', 'number': u'555-1212'}]})
+            'friends': [(1, text_type('Fred')), (2, text_type('Barney'))],
+            'name': text_type('Jack'),
+            'phones': [{'location': text_type('home'), 'number': text_type('555-1212')}]})
 
 
 import colander
@@ -698,7 +713,7 @@ class DogSchema(colander.Schema):
 class Dog(object):
     pass
 
-class TestTypeAtModuleScope(unittest2.TestCase):
+class TestTypeAtModuleScope(unittest.TestCase):
 
     def test_module_and_name_are_correct(self):
         self.assertEqual(Cat.__module__, 'limone.tests')

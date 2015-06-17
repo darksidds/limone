@@ -4,7 +4,7 @@ Changelog for Limone
 Unreleased
 ----------
 
-- ...
+- Added py3k compatibility
 
 0.1a5 (2011-09-01)
 ------------------
